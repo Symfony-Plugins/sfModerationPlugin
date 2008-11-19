@@ -1,0 +1,232 @@
+= sfModeration plugin =
+
+The `sfModerationPlugin` is a symfony plugin that provides tools to handle moderation tasks on your contents:
+
+ - Automatic filtering based on a new column, to hide contents declared as unsafe
+ - Automatic copy of unsafe content into a new table, to handle moderation for all types of contents in a single place.
+ 
+The plugin includes two components to implement these tools:
+ - a new Propel behavior related to moderation and spam filtering on records. If you enable this behavior for one of your model class, all objects of this class with the attribute `moderation_status` set to more than `1` will no longer appear on database queries.
+ - a new module to list, delete and tag as safe contents that were considered unsafe.
+
+== Installation ==
+
+  * Install the plugin
+  
+{{{
+$ symfony plugin-install http://plugins.symfony-project.com/sfModerationPlugin
+}}}
+
+  * Enable Propel behavior support in `propel.ini`:
+
+{{{
+propel.builder.AddBehaviors = true
+}}}
+
+  * If you use symfony 1.0, change one builder class in `propel.ini` to avoid a bug in behaviors (not necessary in symfony 1.1):
+
+{{{
+; builder settings
+propel.builder.peer.class = plugins.sfModerationPlugin.lib.SfPeerBuilder
+}}}
+
+  * Each table for which you want this behavior enabled must have one integer column to support the moderation status. If there is none, add a `moderation_status` column in `schema.yml`
+
+{{{
+propel:
+  item:
+    id:
+    title:             varchar(255)
+    body:              longvarchar
+    created_at:
+    updated_at:
+    moderation_status: { type: integer, default: 1, index: true }    # Add this column to each table
+}}}
+
+    If you can't change the `schema.yml` (for instance if this schema is in a plugin), use the [http://trac.symfony-project.com/wiki/sfPropelAlternativeSchemaPlugin sfPropelAlternativeSchemaPlugin] to add the `moderation_status` column to your tables.
+    
+  * Activate the behavior for those of your Propel models that need spam moderation:
+
+{{{
+// lib/model/Item.php
+class Item
+{
+}
+
+sfPropelBehavior::add('Item', array('moderation'));
+}}}
+
+    By default, the plugin will consider the `moderation_status` column for this model. You can also specify another column if your model doesn't allow you to use a `moderation_status` column:
+
+{{{
+sfPropelBehavior::add('Item', array('moderation' => array('status_column' => 'my_spam_tag')));
+}}}
+
+    Note that the column must still be an integer with default value equal to '1'.
+    
+  Alternatively, you can let the plugin register the behavior on models on its own. This is particularly useful if you need to add the behavior to models defined in a third party plugin, or if you have many models to extend. To do so, you just need to list the models to be extended in your `app.yml`:
+  
+{{{
+all:
+  sfModerationPlugin:
+    auto_register_behavior: true
+    moderated_classes:      [Item]
+}}}
+  
+  * Rebuild your model:
+
+{{{
+$ symfony propel-build-model
+}}}
+
+== Basic Usage ==
+
+If you enable the behavior on a model, selection methods of this model (`retrieveByPk`, `doCount`, `doSelect`, `doSelectOne`, `doSelectJoinXXX`, `doSelectJoinAll`, `doSelectJoinAllExceptXXX`, `doSelectRS`) will not return objects marked as unsafe.
+
+{{{
+$item = new Item();
+$item->save();
+$id = $item->getId();
+$item->tagAsUnsafe();
+$item = ItemPeer::retrieveByPk($id);   // Returns null
+}}}
+
+You can inspect the moderation status of any object through the `getModerationStatus()` method.
+
+{{{
+$status = $item->getModerationStatus();
+switch($status)
+{
+  case sfPropelModerationBehavior::TAGGED_SAFE:
+    echo "The item has been checked and marked as safe";
+    break;
+  case sfPropelModerationBehavior::NOT_CHECKED:
+    echo "The item is not yet checked";
+    break;
+  case sfPropelModerationBehavior::AUTO_TAGGED_UNSAFE:
+    echo "The item has been checked by an automated service and marked as spam";
+    break;
+  case sfPropelModerationBehavior::TAGGED_UNSAFE:
+    echo "The item has been checked and marked as spam";
+}
+}}}
+
+By default, records with a `NOT_CHECKED` and `TAGGED_SAFE` status are shown, others are hidden. Nevertheless, if you want to force moderation, you just need to change one setting in the `app.yml`:
+
+{{{
+all:
+  sfModerationPlugin:
+    display_treshold: 0     # Only allow records marked TAGGED_SAFE
+   #display_treshold: 1     # Allow records marked TAGGED_SAFE, and NOT_CHECKED
+   #display_treshold: 2     # Allow records marked TAGGED_SAFE, NOT_CHECKED, and AUTO_TAGGED_UNSAFE
+   #display_treshold: 3     # Allow all records
+}}}
+
+With this setting, only records marked with `TAGGED_SAFE` are returned by selection methods.
+
+The behavior can be deactivated temporarily for all models through the `sfPropelModerationBehavior::disable()` method. This will allow you to query the database for tagged records.
+
+{{{
+$item = ItemPeer::retrieveByPk($id);   // Returns null
+sfPropelModerationBehavior::disable();
+$item = ItemPeer::retrieveByPk($id);   // Returns an item
+}}}
+
+Don't forget to enable the behavior again afterwards:
+
+{{{
+sfPropelModerationBehavior::enable();
+}}}
+
+== Browsing through moderated content ==
+
+An object tagged as unsafe doesn't appear anymore in the frontend, however it is still in the database. This is to allow a two-step moderation:
+ - A first moderator (can be a robot) spots a content as unsafe and tags it as such
+ - A second moderator (should be a human) checks the list of moderated contents, and decides either to delete, or to republish the reported contents.
+
+However, if you want to list all the moderated content, you'd have to iterate over all the models in which the behavior is activated.
+
+To avoid this limitation, the plugin offers the ability to automatically save a small copy of a moderated content upon moderation, in a new table called `sf_moderated_content`. Here is the data kept in the table:
+
+{{{
+sf_moderated_content:
+  _attributes:       { phpName: sfModeratedContent }
+  id:
+  object_id:         { type: integer, required: true }
+  object_model:      { type: varchar, size: 50 }
+  user_name:         { type: varchar, size: 100 }
+  user_email:        { type: varchar, size: 100 }
+  title:             { type: longvarchar }
+  content:           { type: longvarchar }
+  url:               { type: longvarchar }
+  status:            { type: integer, default: 1, index: true }
+  comment:           { type: longvarchar }
+  moderated_at:      { type: timestamp, index: true }
+  object_updated_at: { type: timestamp, index: true }
+}}}
+
+To enable this feature, you must set the `app_sfModeration_plugin_is_monitored` setting to `true`:
+
+{{{
+all:
+  sfModerationPlugin:
+    is_monitored:   true
+}}}
+
+The plugin also offers a module to browse the moderated content table. It is called `sfModeration` and needs to be enabled in `settings.yml` in order to be made accessible to the browser.
+
+{{{
+all:
+  .settings:
+    enabled_modules:        [default, sfModeration]
+}}}
+
+Once the configuration finished, you can browse to the moderated content list at the following URL:
+
+{{{
+http://myapp/frontend_dev.php/sfModeration
+}}}
+
+You will see a list of moderated content, and you will be able to delete or republish them.
+
+== Advanced configuration ==
+
+You don't always want every change on your content to trigger moderation: some columns can be unimportant.
+To trigger moderation only on certains columns you can set a 'watch_columns' param on your object configuration.
+This must contain the list of table columns you want to control  
+{{{
+      Monitored_Item:
+        watch_columns:        [title, content, url]
+}}}
+
+== Todo ==
+
+ * Document all the features, including the advanced configuration
+ * Add support for individually moderating columns of a Propel object
+ * Add a Report table to allow users to complain about a content (hash between user_id, object_id and object_class)
+ * Add an optional verification against Akismet
+ * Add lists for moderators (reported content, latest published content, latest spammed content)
+ * Add a batch to remove old contents marked as spam
+ * Save IP address in sfModeratedContent when user updates content
+ * Save moderator name in sfModeratedContent when moderator tags content
+ * Send an email to content author on deletion in sfModeration module
+
+== Changelog ==
+
+=== Trunk ===
+
+ * blacksun: Added support for watched columns 
+ * francois: Added support for sfGuardUserProfile
+ * francois: Fixed error on type display in sfModeration module
+
+=== 2007-11-09 | 0.6.1 Alpha ===
+
+  * francois: Added auto-registering system
+  * francois: Added PHPDoc
+  * francois: Added a table of moderated content to get all moderated content in one place (based on a patch by Nicolas Perriault)
+  * francois: Added a module to manage moderated content
+  * francois: Moderating a Propel object doesn't change its `updated_at` value
+
+=== 2007-09-09 | 0.6.0 Alpha ===
+
+  * francois: Initial release (based on sfPropelSpamTagBehavior 0.9.1)

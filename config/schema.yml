@@ -1,0 +1,19 @@
+propel:
+  _attributes:         { package: plugins.sfModerationPlugin.lib.model }
+  sf_moderated_content:
+    _attributes:       { phpName: sfModeratedContent }
+    id:
+    object_id:         { type: integer, required: true }
+    object_model:      { type: varchar, size: 50 }
+    user_name:         { type: varchar, size: 100 }
+    user_email:        { type: varchar, size: 100 }
+    title:             { type: longvarchar }
+    content:           { type: longvarchar }
+    url:               { type: longvarchar }
+    status:            { type: integer, default: 1, index: true }
+    comment:           { type: longvarchar }
+    moderated_at:      { type: timestamp, index: true }
+    object_updated_at: { type: timestamp, index: true }
+    _indexes:
+      model_id:       [object_id, object_model]
+      model_id_date:  [object_id, object_model, moderated_at]

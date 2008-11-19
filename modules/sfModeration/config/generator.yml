@@ -1,0 +1,29 @@
+generator:
+  class:              sfPropelAdminGenerator
+  param:
+    model_class:      sfModeratedContent
+    theme:            default
+    
+    fields:
+      object_updated_at: { name: Updated at, params: date_format='MMM.dd HH:mm' }
+      moderated_at:      { name: Moderated at, params: date_format='MMM.dd HH:mm' }
+      object_model:      { name: Type }
+      type_filter:       { name: Type }
+      status_filter:     { name: Status }
+      
+    list:
+      title:          Moderated Content
+      layout:         stacked
+      params:         |
+        %%user_name%% (%%user_email%%) wrote a %%type%% on %%object_updated_at%%:<br/>
+        <strong>%%title%%</strong>
+        <div class="content">
+          %%content%%<br />
+          <em>Reported as %%status_string%% on %%moderated_at%% (%%comment%%).</em>
+        </div>
+      display:           [object_model, status, object_updated_at, moderated_at, user_name, user_email, title]
+      object_actions:
+        _delete:
+        markAsSafe:      { name: Declare safe, icon: /sf/sf_admin/images/tick.png }
+        seeOriginalPost: { name: See original post }
+      filters:           [user_name, user_email, url, _type_filter, _status_filter, object_updated_at]

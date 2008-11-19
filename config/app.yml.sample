@@ -1,0 +1,38 @@
+all:
+  sfModerationPlugin:
+
+    status_names:                     # Names of the status code, for display in sfModeration module
+      0: accepted
+      1: not-checked
+      2: auto-refused
+      3: refused
+
+    display_treshold:         0       # Only objects with status less than or equal to this value are monitored
+    # Possible values are:
+    # 0 Only display records marked TAGGED_SAFE
+    # 1 Display records marked TAGGED_SAFE, and NOT_CHECKED
+    # 2 Display records marked TAGGED_SAFE, NOT_CHECKED, and AUTO_TAGGED_UNSAFE
+    # 3 Display all records
+
+    is_monitored:             false   # Enable copy of moderated content object in sf_moderated_content table
+    monitoring_treshold:      2       # Only objects with status greater than or equal to this value are monitored
+    # Possible values are:
+    # 3 Only monitor records marked TAGGED_UNSAFE
+    # 2 Monitor records marked AUTO_TAGGED_UNSAFE and TAGGED_UNSAFE
+    # 1 Monitor records marked NOT_CHECKED, AUTO_TAGGED_UNSAFE and TAGGED_UNSAFE
+    # 0 Monitor all records
+
+    
+    auto_register_behavior:   true    # Let the plugin register behaviors based on the app_sfModerationPlugin_moderated_class configuration
+    moderated_classes:
+      Item:
+        type:                 item_from_my_app  # Content type as displayed in the sfModeration module
+        status_column:        moderation_status
+        comment_column:       moderation_comment
+        title_getter:         getName
+        content_getter:       getDescription
+        url_getter:           getFrontUrl
+        username_getter:      getUserName
+        useremail_getter:     getUserEmail
+        watch_columns:        [title, content, url]
+        is_monitored:         true
